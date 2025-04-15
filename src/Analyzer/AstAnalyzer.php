@@ -121,7 +121,8 @@ class AstAnalyzer extends ClosureAnalyzer
     private function getParser(): CodeParser
     {
         if (class_exists(ParserFactory::class)) {
-            return new ParserFactory()->createForHostVersion();
+            $factory = new ParserFactory();
+            return $factory->create(ParserFactory::PREFER_PHP7); // typical usage
         }
         throw new RuntimeException("No parser available. ParserFactory not found.");
     }

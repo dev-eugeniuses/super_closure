@@ -17,7 +17,7 @@ use Closure;
 
 class Serializer implements SerializerInterface
 {
-    public const string RECURSION = "{{RECURSION}}";
+    public const RECURSION = "{{RECURSION}}";
 
     /** @var array<string, bool> */
     private static array $dataToKeep = [
