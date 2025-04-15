@@ -15,20 +15,19 @@
   ],
   "require": {
       "php": ">=8.1",
-      "nikic/php-parser": "^1.2|^2.0|^3.0|^4.0",
-      "symfony/polyfill-php56": "^1.0"
+      "nikic/php-parser": "^1.2|^2.0|^3.0|^4.0"
   },
   "require-dev": {
-      "phpunit/phpunit": "^4.0|^5.0"
+    "phpunit/phpunit": "^12.0"
   },
   "autoload": {
-      "psr-4": {
-          "SuperClosure\\": "src/"
-      }
+    "psr-4": {
+      "SuperClosure\\": "src/"
+    }
   },
   "autoload-dev": {
-      "psr-4": {
-          "SuperClosure\\Test\\": "tests/"
-      }
+    "psr-4": {
+      "SuperClosure\\Test\\": "tests/"
+    }
   }
 }
