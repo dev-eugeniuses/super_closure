@@ -2,14 +2,14 @@
 
 class Foo
 {
-    private $bar;
+    private mixed $bar;
 
     public function __construct($bar = null)
     {
         $this->bar = $bar;
     }
 
-    public function getClosure()
+    public function getClosure(): callable
     {
         return function () {
             return $this->bar;

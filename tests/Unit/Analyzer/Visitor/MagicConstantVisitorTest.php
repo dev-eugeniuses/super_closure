@@ -1,70 +1,81 @@
-<?php namespace SuperClosure\Test\Unit\Analyzer\Visitor;
+<?php
 
+namespace SuperClosure\Test\Unit\Analyzer\Visitor;
+
+use PhpParser\Node\Scalar\LNumber;
+use PhpParser\Node\Scalar\MagicConst\Class_;
+use PhpParser\Node\Scalar\MagicConst\Dir;
+use PhpParser\Node\Scalar\MagicConst\File;
+use PhpParser\Node\Scalar\MagicConst\Function_;
+use PhpParser\Node\Scalar\MagicConst\Line;
+use PhpParser\Node\Scalar\MagicConst\Method;
+use PhpParser\Node\Scalar\MagicConst\Namespace_;
+use PhpParser\Node\Scalar\MagicConst\Trait_;
+use PhpParser\Node\Scalar\String_;
+use PhpParser\NodeAbstract;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
 use SuperClosure\Analyzer\Visitor\MagicConstantVisitor;
 
-/**
- * @covers SuperClosure\Analyzer\Visitor\MagicConstantVisitor
- */
-class MagicConstantVisitorTest extends \PHPUnit_Framework_TestCase
+#[CoversClass(SuperClosure\Analyzer\Visitor\MagicConstantVisitor::class)] class MagicConstantVisitorTest extends TestCase
 {
-    public function classNameProvider()
+    public static function classNameProvider(): array
     {
         return [
-            ['PhpParser\Node\Scalar\MagicConst\Class_', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\Dir', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\File', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\Function_', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\Line', 'PhpParser\Node\Scalar\LNumber'],
-            ['PhpParser\Node\Scalar\MagicConst\Method', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\Namespace_', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\MagicConst\Trait_', 'PhpParser\Node\Scalar\String_'],
-            ['PhpParser\Node\Scalar\String_', 'PhpParser\Node\Scalar\String_'],
+            [Class_::class, String_::class],
+            [Dir::class, String_::class],
+            [File::class, String_::class],
+            [Function_::class, String_::class],
+            [Line::class, LNumber::class],
+            [Method::class, String_::class],
+            [Namespace_::class, String_::class],
+            [Trait_::class, String_::class],
+            [String_::class, String_::class],
         ];
     }
 
-    /**
-     * @dataProvider classNameProvider
-     */
-    public function testDataFromClosureLocationGetsUsed($original, $result)
+    #[DataProvider('classNameProvider')] public function testDataFromClosureLocationGetsUsed($original, $result): void
     {
         $location = [
-            'class'     => null,
+            'class' => null,
             'directory' => null,
-            'file'      => null,
-            'function'  => null,
-            'line'      => null,
-            'method'    => null,
+            'file' => null,
+            'function' => null,
+            'line' => null,
+            'method' => null,
             'namespace' => null,
-            'trait'     => null,
+            'trait' => null,
         ];
 
         $visitor = new MagicConstantVisitor($location);
 
-        $node = $this->getMockParserNode($original, strtr(substr(rtrim($original, '_'), 15), '\\', '_'));
+        $node = $this->getMockParserNode($original, str_replace('\\', '_', substr(rtrim($original, '_'), 15)));
         $resultNode = $visitor->leaveNode($node) ?: $node;
 
         $this->assertInstanceOf($result, $resultNode);
     }
 
     /**
-     * @param string      $class
+     * @param string $class
      * @param string|null $type
      * @param string|null $attribute
      *
-     * @return \PhpParser\NodeAbstract
+     * @return NodeAbstract
      */
-    public function getMockParserNode($class, $type = null, $attribute = null)
+    public function getMockParserNode(string $class, ?string $type = null, ?string $attribute = null): NodeAbstract
     {
         $node = $this->getMockBuilder($class)
             ->disableOriginalConstructor()
-            ->setMethods(['getType', 'getAttribute'])
+            ->onlyMethods(['getType', 'getAttribute'])
             ->getMock();
-        $node->expects($this->any())
+        $node
             ->method('getAttribute')
-            ->will($this->returnValue($attribute));
-        $node->expects($this->any())
+            ->willReturn($attribute);
+        $node
             ->method('getType')
-            ->will($this->returnValue($type));
+            ->willReturn($type);
+
         return $node;
     }
 }

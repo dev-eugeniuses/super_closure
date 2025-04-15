@@ -1,40 +1,35 @@
-<?php namespace SuperClosure\Analyzer\Visitor;
+<?php
 
+declare(strict_types=1);
+
+namespace SuperClosure\Analyzer\Visitor;
+
+use ReflectionFunction;
 use SuperClosure\Exception\ClosureAnalysisException;
 use PhpParser\Node\Stmt\Namespace_ as NamespaceNode;
 use PhpParser\Node\Stmt\Trait_ as TraitNode;
 use PhpParser\Node\Stmt\Class_ as ClassNode;
 use PhpParser\Node\Expr\Closure as ClosureNode;
 use PhpParser\Node as AstNode;
-use PhpParser\NodeVisitorAbstract as NodeVisitor;
+use PhpParser\NodeVisitorAbstract;
 
 /**
- * This is a visitor that extends the nikic/php-parser library and looks for a
- * closure node and its location.
+ * This is a visitor that extends the nikic/php-parser library and locates a closure node and its location.
  *
  * @internal
  */
-final class ClosureLocatorVisitor extends NodeVisitor
+final class ClosureLocatorVisitor extends NodeVisitorAbstract
 {
-    /**
-     * @var \ReflectionFunction
-     */
-    private $reflection;
+    private ReflectionFunction $reflection;
+
+    public ?ClosureNode $closureNode = null;
 
     /**
-     * @var ClosureNode
+     * @var array{class: ?string, directory: string, file: string, function: string, line: int, method: ?string, namespace: ?string, trait: ?string}
      */
-    public $closureNode;
+    public array $location;
 
-    /**
-     * @var array
-     */
-    public $location;
-
-    /**
-     * @param \ReflectionFunction $reflection
-     */
-    public function __construct($reflection)
+    public function __construct(ReflectionFunction $reflection)
     {
         $this->reflection = $reflection;
         $this->location = [
@@ -49,44 +44,43 @@ final class ClosureLocatorVisitor extends NodeVisitor
         ];
     }
 
-    public function enterNode(AstNode $node)
+    public function enterNode(AstNode $node): void
     {
-        // Determine information about the closure's location
-        if (!$this->closureNode) {
+        // If we haven't located the closure node yet, update location info.
+        if ($this->closureNode === null) {
             if ($node instanceof NamespaceNode) {
-                $namespace = $node->name !== null
-                    ? $node->name->toString()
-                    : null;
+                $namespace = $node->name?->toString();
                 $this->location['namespace'] = $namespace;
             }
             if ($node instanceof TraitNode) {
-                $this->location['trait'] = (string) $node->name;
+                $this->location['trait'] = (string)$node->name;
                 $this->location['class'] = null;
             } elseif ($node instanceof ClassNode) {
-                $this->location['class'] = (string) $node->name;
+                $this->location['class'] = (string)$node->name;
                 $this->location['trait'] = null;
             }
         }
 
-        // Locate the node of the closure
+        // Locate the node that represents the closure.
         if ($node instanceof ClosureNode) {
-            if ($node->getAttribute('startLine') == $this->location['line']) {
-                if ($this->closureNode) {
-                    $line = $this->location['file'] . ':' . $node->getAttribute('startLine');
-                    throw new ClosureAnalysisException("Two closures were "
-                        . "declared on the same line ({$line}) of code. Cannot "
-                        . "determine which closure was the intended target.");
-                } else {
-                    $this->closureNode = $node;
+            $startLine = $node->getAttribute('startLine');
+            if ($startLine === $this->location['line']) {
+                if ($this->closureNode !== null) {
+                    $lineInfo = $this->location['file'] . ':' . $startLine;
+                    throw new ClosureAnalysisException(
+                        "Two closures were declared on the same line ({$lineInfo}) of code. Cannot determine which closure was the intended target."
+                    );
                 }
+
+                $this->closureNode = $node;
             }
         }
     }
 
-    public function leaveNode(AstNode $node)
+    public function leaveNode(AstNode $node): void
     {
-        // Determine information about the closure's location
-        if (!$this->closureNode) {
+        // Reset location info if the closure hasn't been located.
+        if ($this->closureNode === null) {
             if ($node instanceof NamespaceNode) {
                 $this->location['namespace'] = null;
             }
@@ -98,20 +92,19 @@ final class ClosureLocatorVisitor extends NodeVisitor
         }
     }
 
-    public function afterTraverse(array $nodes)
+    public function afterTraverse(array $nodes): void
     {
-        if ($this->location['class']) {
-            $this->location['class'] = $this->location['namespace'] . '\\' . $this->location['class'];
+        if ($this->location['class'] !== null) {
+            $namespace = $this->location['namespace'] ?? '';
+            $this->location['class'] = $namespace . '\\' . $this->location['class'];
             $this->location['method'] = "{$this->location['class']}::{$this->location['function']}";
-        } elseif ($this->location['trait']) {
-            $this->location['trait'] = $this->location['namespace'] . '\\' . $this->location['trait'];
+        } elseif ($this->location['trait'] !== null) {
+            $namespace = $this->location['namespace'] ?? '';
+            $this->location['trait'] = $namespace . '\\' . $this->location['trait'];
             $this->location['method'] = "{$this->location['trait']}::{$this->location['function']}";
-
-            // If the closure was declared in a trait, then we will do a best
-            // effort guess on the name of the class that used the trait. It's
-            // actually impossible at this point to know for sure what it is.
-            if ($closureScope = $this->reflection->getClosureScopeClass()) {
-                $this->location['class'] = $closureScope ? $closureScope->getName() : null;
+            $closureScope = $this->reflection->getClosureScopeClass();
+            if ($closureScope !== null) {
+                $this->location['class'] = $closureScope->getName();
             } elseif ($closureThis = $this->reflection->getClosureThis()) {
                 $this->location['class'] = get_class($closureThis);
             }

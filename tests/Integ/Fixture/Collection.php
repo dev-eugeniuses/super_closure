@@ -1,6 +1,8 @@
 <?php namespace SuperClosure\Test\Integ\Fixture;
 
-class Collection extends \ArrayObject
+use ArrayObject;
+
+class Collection extends ArrayObject
 {
     //
 }

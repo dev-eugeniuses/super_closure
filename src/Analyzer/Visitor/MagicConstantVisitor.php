@@ -1,50 +1,59 @@
-<?php namespace SuperClosure\Analyzer\Visitor;
+<?php
+
+declare(strict_types=1);
+
+namespace SuperClosure\Analyzer\Visitor;
 
 use PhpParser\Node\Scalar\LNumber as NumberNode;
 use PhpParser\Node\Scalar\String_ as StringNode;
 use PhpParser\Node as AstNode;
-use PhpParser\NodeVisitorAbstract as NodeVisitor;
+use PhpParser\NodeVisitorAbstract;
 
 /**
- * This is a visitor that resolves magic constants (e.g., __FILE__) to their
+ * This visitor resolves magic constants (e.g., __FILE__) to their
  * intended values within a closure's AST.
  *
  * @internal
  */
-final class MagicConstantVisitor extends NodeVisitor
+final class MagicConstantVisitor extends NodeVisitorAbstract
 {
     /**
-     * @var array
+     * Location information for resolving magic constants.
+     *
+     * Expected keys: 'class', 'directory', 'file', 'function', 'line', 'method', 'namespace', 'trait'.
+     *
+     * @var array<string, mixed>
      */
-    private $location;
+    private array $location;
 
     /**
-     * @param array $location
+     * Constructor.
+     *
+     * @param array<string, mixed> $location
      */
     public function __construct(array $location)
     {
         $this->location = $location;
     }
 
-    public function leaveNode(AstNode $node)
+    /**
+     * Called when leaving a node. Returns a new node for magic constants.
+     *
+     * @param AstNode $node
+     * @return ?AstNode
+     */
+    public function leaveNode(AstNode $node): ?AstNode
     {
-        switch ($node->getType()) {
-            case 'Scalar_MagicConst_Class' :
-                return new StringNode($this->location['class'] ?: '');
-            case 'Scalar_MagicConst_Dir' :
-                return new StringNode($this->location['directory'] ?: '');
-            case 'Scalar_MagicConst_File' :
-                return new StringNode($this->location['file'] ?: '');
-            case 'Scalar_MagicConst_Function' :
-                return new StringNode($this->location['function'] ?: '');
-            case 'Scalar_MagicConst_Line' :
-                return new NumberNode($node->getAttribute('startLine') ?: 0);
-            case 'Scalar_MagicConst_Method' :
-                return new StringNode($this->location['method'] ?: '');
-            case 'Scalar_MagicConst_Namespace' :
-                return new StringNode($this->location['namespace'] ?: '');
-            case 'Scalar_MagicConst_Trait' :
-                return new StringNode($this->location['trait'] ?: '');
-        }
+        return match ($node->getType()) {
+            'Scalar_MagicConst_Class' => new StringNode($this->location['class'] ?? ''),
+            'Scalar_MagicConst_Dir' => new StringNode($this->location['directory'] ?? ''),
+            'Scalar_MagicConst_File' => new StringNode($this->location['file'] ?? ''),
+            'Scalar_MagicConst_Function' => new StringNode($this->location['function'] ?? ''),
+            'Scalar_MagicConst_Line' => new NumberNode((int)($node->getAttribute('startLine') ?? 0)),
+            'Scalar_MagicConst_Method' => new StringNode($this->location['method'] ?? ''),
+            'Scalar_MagicConst_Namespace' => new StringNode($this->location['namespace'] ?? ''),
+            'Scalar_MagicConst_Trait' => new StringNode($this->location['trait'] ?? ''),
+            default => null,
+        };
     }
 }

@@ -1,15 +1,20 @@
-<?php namespace SuperClosure\Test\Integ;
+<?php
+namespace SuperClosure\Test\Integ;
 
+use Closure;
+use Exception;
+use PHPUnit\Framework\TestCase;
 use SuperClosure\Analyzer\AstAnalyzer;
 use SuperClosure\Analyzer\TokenAnalyzer;
 use SuperClosure\SerializableClosure;
 use SuperClosure\Serializer;
 use SuperClosure\Test\Integ\Fixture\Collection;
 use SuperClosure\Test\Integ\Fixture\Foo;
+use Throwable;
 
-class SerializationTest extends \PHPUnit_Framework_TestCase
+class SerializationTest extends TestCase
 {
-    public function testSerializeBasicClosure()
+    public function testSerializeBasicClosure(): void
     {
         $closure = function ($a, $b) {
             return $a + $b;
@@ -19,7 +24,41 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(11, $results);
     }
 
-    public function testSerializeBasicClosureViaClosureWrapping()
+    private function getResults(Closure $closure, array $args = []): array
+    {
+        $results = ['original' => call_user_func_array($closure, $args)];
+
+        // AST
+        try {
+            $serializer = new Serializer(new AstAnalyzer, 'hashkey');
+            $serialized = $serializer->serialize($closure);
+            $unserialized = $serializer->unserialize($serialized);
+            $results['ast'] = call_user_func_array($unserialized, $args);
+        } catch (Exception|Throwable $e) {
+            $results['ast'] = 'ERROR';
+        }
+
+        // Token
+        try {
+            $serializer = new Serializer(new TokenAnalyzer, 'hashkey');
+            $serialized = $serializer->serialize($closure);
+            $unserialized = $serializer->unserialize($serialized);
+            $results['token'] = call_user_func_array($unserialized, $args);
+        } catch (Exception|Throwable $e) {
+            $results['token'] = 'ERROR';
+        }
+
+        return $results;
+    }
+
+    private function assertAllEquals($expected, array $actuals): void
+    {
+        foreach ($actuals as $actual) {
+            $this->assertEquals($expected, $actual);
+        }
+    }
+
+    public function testSerializeBasicClosureViaClosureWrapping(): void
     {
         $closure = function ($a, $b) {
             return $a + $b;
@@ -35,7 +74,7 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(3, $results);
     }
 
-    public function testSerializeClosureWithUseStatement()
+    public function testSerializeClosureWithUseStatement(): void
     {
         $operand = 8;
         $closure = function ($num) use ($operand) {
@@ -46,9 +85,9 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(15, $results);
     }
 
-    public function testSerializeClosureThatUsesAnotherClosure()
+    public function testSerializeClosureThatUsesAnotherClosure(): void
     {
-        $otherClosure = function ($n) {return $n + 2;};
+        $otherClosure = function ($n) { return $n + 2; };
         $closure = function ($n) use ($otherClosure) {
             return $otherClosure($n + 5);
         };
@@ -57,16 +96,16 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(15, $results);
     }
 
-    public function testSerializeAOneLineClosure()
+    public function testSerializeAOneLineClosure(): void
     {
         $c = $d = 5;
-        $closure = function($a,$b)use($c,$d){return$a+$b+$c+$d;};
+        $closure = function ($a, $b) use ($c, $d) { return $a + $b + $c + $d; };
 
         $results = $this->getResults($closure, [2, 8]);
         $this->assertAllEquals(20, $results);
     }
 
-    public function testSerializeClosureAndPreserveMagicConstants()
+    public function testSerializeClosureAndPreserveMagicConstants(): void
     {
         $closure = function () {
             return basename(__FILE__);
@@ -79,7 +118,7 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertStringEndsWith('eval()\'d code', $results['token']);
     }
 
-    public function testSerializeClosureAndMakeClassNamesFullyQualified()
+    public function testSerializeClosureAndMakeClassNamesFullyQualified(): void
     {
         $closure = function (Collection $collection) {
             return iterator_to_array($collection);
@@ -92,9 +131,10 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertStringEndsWith('ERROR', $results['token']);
     }
 
-    public function testCannotSerializeClosureWhenOneTheSameLineAsAnother()
+    public function testCannotSerializeClosureWhenOneTheSameLineAsAnother(): void
     {
-        $closure = function($a){return$a;};function($b){return$b;};
+        // Two closures on the same line: the first is our target.
+        $closure = function ($a) { return $a; }; function ($b) { return $b; };
 
         $results = $this->getResults($closure, [5]);
         $this->assertEquals(5, $results['original']);
@@ -102,12 +142,12 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('ERROR', $results['token']);
     }
 
-    public function testSerializeClosureWithComposition()
+    public function testSerializeClosureWithComposition(): void
     {
-        $inc = function ($n) {return $n + 1;};
-        $dec = function ($n) {return $n - 1;};
-        $compose = function ($f1, $f2) {
-            return function ($n) use ($f1, $f2) {
+        $inc = function ($n) { return $n + 1; };
+        $dec = function ($n) { return $n - 1; };
+        $compose = static function ($f1, $f2) {
+            return static function ($n) use ($f1, $f2) {
                 return $f2($f1($n));
             };
         };
@@ -117,18 +157,18 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(4, $results);
     }
 
-    public function testSerializeClosureWithBinding()
+    public function testSerializeClosureWithBinding(): void
     {
         $foo = new Foo(10);
         $closure = $foo->getClosure();
 
-        $results = $this->getResults($closure, []);
+        $results = $this->getResults($closure);
         $this->assertAllEquals(10, $results);
     }
 
-    public function testSerializeRecursiveClosure()
+    public function testSerializeRecursiveClosure(): void
     {
-        $factorial = function ($num) use (&$factorial) {
+        $factorial = static function ($num) use (&$factorial) {
             return $num <= 1 ? 1 : $num * $factorial($num - 1);
         };
 
@@ -136,62 +176,24 @@ class SerializationTest extends \PHPUnit_Framework_TestCase
         $this->assertAllEquals(120, $results);
     }
 
-    public function testSerializeStaticClosure()
+    public function testSerializeStaticClosure(): void
     {
         $closure = static function () {
             return 10;
         };
 
-        $results = $this->getResults($closure, []);
+        $results = $this->getResults($closure);
         $this->assertAllEquals(10, $results);
     }
 
-    public function testClosuresInContextAreUnboxedBackToClosures()
+    public function testClosuresInContextAreUnboxedBackToClosures(): void
     {
-        $usedFn = function () {};
-        $closure = function () use ($usedFn){
+        $usedFn = function () { };
+        $closure = function () use ($usedFn) {
             return get_class($usedFn);
         };
 
-        $results = $this->getResults($closure, []);
+        $results = $this->getResults($closure);
         $this->assertAllEquals('Closure', $results);
-    }
-
-    private function getResults(\Closure $closure, array $args = [])
-    {
-        $results = ['original' => call_user_func_array($closure, $args)];
-
-        // AST
-        try {
-            $serializer = new Serializer(new AstAnalyzer, 'hashkey');
-            $serialized = $serializer->serialize($closure);
-            $unserialized = $serializer->unserialize($serialized);
-            $results['ast'] = call_user_func_array($unserialized, $args);
-        } catch (\Exception $e) {
-            $results['ast'] = 'ERROR';
-        } catch (\Throwable $e) {
-            $results['ast'] = 'ERROR';
-        }
-
-        // Token
-        try {
-            $serializer = new Serializer(new TokenAnalyzer, 'hashkey');
-            $serialized = $serializer->serialize($closure);
-            $unserialized = $serializer->unserialize($serialized);
-            $results['token'] = call_user_func_array($unserialized, $args);
-        } catch (\Exception $e) {
-            $results['token'] = 'ERROR';
-        } catch (\Throwable $e) {
-            $results['token'] = 'ERROR';
-        }
-
-        return $results;
-    }
-
-    private function assertAllEquals($expected, array $actuals)
-    {
-        foreach ($actuals as $actual) {
-            $this->assertEquals($expected, $actual);
-        }
     }
 }

@@ -1,88 +1,166 @@
-<?php namespace SuperClosure;
+<?php
+
+declare(strict_types=1);
+
+namespace SuperClosure;
 
 use Closure;
+use Exception;
+use LogicException;
+use ParseError;
+use ReflectionException;
+use Serializable;
 use SuperClosure\Exception\ClosureUnserializationException;
 
 /**
- * This class acts as a wrapper for a closure, and allows it to be serialized.
+ * This class acts as a wrapper for a closure, allowing it to be serialized.
  *
- * With the combined power of the Reflection API, code parsing, and the infamous
- * `eval()` function, you can serialize a closure, unserialize it somewhere
- * else (even a different PHP process), and execute it.
+ * Note: Instead of implementing the deprecated Serializable interface,
+ *       we implement __serialize() and __unserialize() for PHP 8.1+.
  */
-class SerializableClosure implements \Serializable
+class SerializableClosure implements Serializable
 {
     /**
-     * The closure being wrapped for serialization.
-     *
-     * @var Closure
+     * The closure being wrapped.
      */
-    private $closure;
+    private ?Closure $closure = null;
 
     /**
      * The serializer doing the serialization work.
-     *
-     * @var SerializerInterface
      */
-    private $serializer;
+    private SerializerInterface $serializer;
 
     /**
-     * The data from unserialization.
-     *
-     * @var array
+     * Data captured during serialization.
      */
-    private $data;
+    private ?array $data = null;
 
     /**
      * Create a new serializable closure instance.
      *
-     * @param Closure                  $closure
+     * @param Closure $closure
      * @param SerializerInterface|null $serializer
      */
-    public function __construct(
-        \Closure $closure,
-        SerializerInterface $serializer = null
-    ) {
+    public function __construct(Closure $closure, ?SerializerInterface $serializer = null)
+    {
         $this->closure = $closure;
-        $this->serializer = $serializer ?: new Serializer;
+        $this->serializer = $serializer ?? new Serializer();
     }
 
     /**
      * Return the original closure object.
      *
      * @return Closure
+     * @throws LogicException if the closure has not been initialized.
      */
-    public function getClosure()
+    public function getClosure(): Closure
     {
+        if (!isset($this->closure)) {
+            throw new LogicException("Closure is not defined. This object must be properly initialized.");
+        }
+
         return $this->closure;
     }
 
     /**
-     * Delegates the closure invocation to the actual closure object.
+     * Invokes the closure.
      *
-     * Important Notes:
-     *
-     * - `ReflectionFunction::invokeArgs()` should not be used here, because it
-     *   does not work with closure bindings.
-     * - Args passed-by-reference lose their references when proxied through
-     *   `__invoke()`. This is an unfortunate, but understandable, limitation
-     *   of PHP that will probably never change.
+     * @param mixed ...$args
      *
      * @return mixed
+     * @throws LogicException if the closure has not been initialized.
      */
-    public function __invoke()
+    public function __invoke(...$args): mixed
     {
         return call_user_func_array($this->closure, func_get_args());
+        $this->data = ['sdf'];
+        if (!isset($this->closure)) {
+            throw new LogicException("Closure is not defined. This object must be properly initialized.");
+        }
+
+        return call_user_func_array($this->closure, func_get_args());
+
+        return ($this->closure)(...$args);
+    }
+
+    /**
+     * Returns closure data for debugging.
+     *
+     * @return array
+     * @throws ReflectionException
+     */
+    public function __debugInfo(): array
+    {
+        return $this->data ?? $this->serializer->getData($this->closure, true);
+    }
+
+    public function serialize(): string
+    {
+        return serialize($this->__serialize());
+    }
+
+    /**
+     * Serializes the closure data.
+     *
+     * @return array
+     */
+    public function __serialize(): array
+    {
+        try {
+            // Capture the closure's data if not already done.
+            $this->data = $this->data ?? $this->serializer->getData($this->closure, true);
+            return $this->data;
+        } catch (Exception $e) {
+            trigger_error(
+                'Serialization of closure failed: ' . $e->getMessage(),
+                E_USER_NOTICE
+            );
+
+            // Return an empty array to satisfy __serialize()'s contract.
+            return [];
+        }
+    }
+
+    public function unserialize(string $data): Closure
+    {
+        $this->__unserialize(unserialize($data));
+        return $this->closure;
+    }
+
+    /**
+     * Unserializes the closure data and reconstructs the closure.
+     *
+     * @param array $data
+     *
+     * @throws ClosureUnserializationException
+     */
+    public function __unserialize(array $data): void
+    {
+        $this->data = $data;
+        $reconstructed = __reconstruct_closure($data);
+        if (!($reconstructed instanceof Closure)) {
+            throw new ClosureUnserializationException(
+                'The closure is corrupted and cannot be unserialized.'
+            );
+        }
+        $this->closure = $reconstructed;
+        // Rebind the closure if necessary.
+        if ($data['binding'] || $data['isStatic']) {
+            $this->closure = $this->closure->bindTo(
+                $data['binding'],
+                $data['scope']
+            );
+        }
     }
 
     /**
      * Clones the SerializableClosure with a new bound object and class scope.
      *
-     * The method is essentially a wrapped proxy to the Closure::bindTo method.
+     * The method is essentially a wrapped proxy to the \Closure::bindTo method.
      *
-     * @param mixed $newthis  The object to which the closure should be bound,
+     * @param mixed $newthis The object to which the closure should be bound,
      *                        or NULL for the closure to be unbound.
-     * @param mixed $newscope The class scope to which the closure is to be
+     * @param mixed|string $newscope The class scope to which the closure is to be
      *                        associated, or 'static' to keep the current one.
      *                        If an object is given, the type of the object will
      *                        be used instead. This determines the visibility of
@@ -91,114 +169,41 @@ class SerializableClosure implements \Serializable
      * @return SerializableClosure
      * @link http://www.php.net/manual/en/closure.bindto.php
      */
-    public function bindTo($newthis, $newscope = 'static')
+    public function bindTo(mixed $newthis, mixed $newscope = 'static'): SerializableClosure
     {
         return new self(
             $this->closure->bindTo($newthis, $newscope),
             $this->serializer
         );
     }
-
-    /**
-     * Serializes the code, context, and binding of the closure.
-     *
-     * @return string|null
-     * @link http://php.net/manual/en/serializable.serialize.php
-     */
-    public function serialize()
-    {
-        try {
-            $this->data = $this->data ?: $this->serializer->getData($this->closure, true);
-            return serialize($this->data);
-        } catch (\Exception $e) {
-            trigger_error(
-                'Serialization of closure failed: ' . $e->getMessage(),
-                E_USER_NOTICE
-            );
-            // Note: The serialize() method of Serializable must return a string
-            // or null and cannot throw exceptions.
-            return null;
-        }
-    }
-
-    /**
-     * Unserializes the closure.
-     *
-     * Unserializes the closure's data and recreates the closure using a
-     * simulation of its original context. The used variables (context) are
-     * extracted into a fresh scope prior to redefining the closure. The
-     * closure is also rebound to its former object and scope.
-     *
-     * @param string $serialized
-     *
-     * @throws ClosureUnserializationException
-     * @link http://php.net/manual/en/serializable.unserialize.php
-     */
-    public function unserialize($serialized)
-    {
-        // Unserialize the closure data and reconstruct the closure object.
-        $this->data = unserialize($serialized);
-        $this->closure = __reconstruct_closure($this->data);
-
-        // Throw an exception if the closure could not be reconstructed.
-        if (!$this->closure instanceof Closure) {
-            throw new ClosureUnserializationException(
-                'The closure is corrupted and cannot be unserialized.'
-            );
-        }
-
-        // Rebind the closure to its former binding and scope.
-        if ($this->data['binding'] || $this->data['isStatic']) {
-            $this->closure = $this->closure->bindTo(
-                $this->data['binding'],
-                $this->data['scope']
-            );
-        }
-    }
-
-    /**
-     * Returns closure data for `var_dump()`.
-     *
-     * @return array
-     */
-    public function __debugInfo()
-    {
-        return $this->data ?: $this->serializer->getData($this->closure, true);
-    }
 }
 
 /**
- * Reconstruct a closure.
- *
- * HERE BE DRAGONS!
- *
- * The infamous `eval()` is used in this method, along with the error
- * suppression operator, and variable variables (i.e., double dollar signs) to
- * perform the unserialization logic. I'm sorry, world!
- *
- * This is also done inside a plain function instead of a method so that the
- * binding and scope of the closure are null.
+ * Reconstruct a closure from its serialized data.
  *
  * @param array $__data Unserialized closure data.
  *
  * @return Closure|null
  * @internal
  */
-function __reconstruct_closure(array $__data)
+function __reconstruct_closure(array $__data): ?Closure
 {
     // Simulate the original context the closure was created in.
     foreach ($__data['context'] as $__var_name => &$__value) {
         if ($__value instanceof SerializableClosure) {
-            // Unbox any SerializableClosures in the context.
+            // Unbox any SerializableClosure in the context.
             $__value = $__value->getClosure();
         } elseif ($__value === Serializer::RECURSION) {
-            // Track recursive references (there should only be one).
+            // Track recursive references.
             $__recursive_reference = $__var_name;
         }
-
         // Import the variable into this scope.
         ${$__var_name} = $__value;
     }
+    unset($__value);
+
+    // Assign the code string to a temporary variable.
+    $code = $__data['code'];
 
     // Evaluate the code to recreate the closure.
     try {
@@ -209,9 +214,10 @@ function __reconstruct_closure(array $__data)
         } else {
             @eval("\$__closure = {$__data['code']};");
         }
-    } catch (\ParseError $e) {
-        // Discard the parse error.
+    } catch (ParseError $e) {
+        // Discard parse errors.
+        $__closure = null;
     }
 
-    return isset($__closure) ? $__closure : null;
+    return $__closure instanceof Closure ? $__closure : null;
 }

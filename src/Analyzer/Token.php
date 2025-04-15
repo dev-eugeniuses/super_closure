@@ -1,69 +1,94 @@
-<?php namespace SuperClosure\Analyzer;
+<?php
+
+declare(strict_types=1);
+
+namespace SuperClosure\Analyzer;
+
+use InvalidArgumentException;
 
 /**
- * A Token object represents and individual token parsed from PHP code.
+ * A Token object represents an individual token parsed from PHP code.
  *
  * Each Token object is a normalized token created from the result of the
- * `get_token_all()`. function, which is part of PHP's tokenizer.
+ * token_get_all() function, which is part of PHP's tokenizer.
  *
  * @link http://us2.php.net/manual/en/tokens.php
  */
 class Token
 {
     /**
-     * @var string The token name. Always null for literal tokens.
+     * The token name. Always null for literal tokens.
+     *
+     * @var ?string
      */
-    public $name;
+    public ?string $name;
 
     /**
-     * @var int|null The token's integer value. Always null for literal tokens.
+     * The token's integer value. Always null for literal tokens.
+     *
+     * @var ?int
      */
-    public $value;
+    public ?int $value;
 
     /**
-     * @var string The PHP code of the token.
+     * The PHP code of the token.
+     *
+     * @var string
      */
-    public $code;
+    public string $code;
 
     /**
-     * @var int|null The line number of the token in the original code.
+     * The line number of the token in the original code.
+     *
+     * @var ?int
      */
-    public $line;
+    public ?int $line;
 
     /**
      * Constructs a token object.
      *
-     * @param string   $code
-     * @param int|null $value
-     * @param int|null $line
+     * @param string|array $code  The token code or an array of token data.
+     * @param ?int         $value The token's integer value.
+     * @param ?int         $line  The line number of the token.
      *
-     * @throws \InvalidArgumentException
+     * @throws InvalidArgumentException if code is not a string after processing.
      */
-    public function __construct($code, $value = null, $line = null)
+    public function __construct(string|array $code, ?int $value = null, ?int $line = null)
     {
         if (is_array($code)) {
-            list($value, $code, $line) = array_pad($code, 3, null);
+            // Expecting an array in the order: [value, code, line]
+            [$value, $code, $line] = array_pad($code, 3, null);
+        }
+
+        if (!is_string($code)) {
+            throw new InvalidArgumentException('Code must be a string.');
         }
 
         $this->code = $code;
         $this->value = $value;
         $this->line = $line;
-        $this->name = $value ? token_name($value) : null;
+        $this->name = $value !== null ? token_name($value) : null;
     }
 
     /**
-     * Determines if the token's value/code is equal to the specified value.
+     * Determines if the token's code or value is equal to the specified value.
      *
-     * @param mixed $value The value to check.
+     * @param string|int $value The value to check.
      *
      * @return bool True if the token is equal to the value.
      */
-    public function is($value)
+    public function is(string|int $value): bool
     {
-        return ($this->code === $value || $this->value === $value);
+        // Compare code as string and value as integer/string.
+        return $this->code === (string)$value || $this->value === $value;
     }
 
-    public function __toString()
+    /**
+     * Returns the token's code as a string.
+     *
+     * @return string
+     */
+    public function __toString(): string
     {
         return $this->code;
     }

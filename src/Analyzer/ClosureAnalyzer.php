@@ -1,22 +1,34 @@
-<?php namespace SuperClosure\Analyzer;
+<?php
 
+declare(strict_types=1);
+
+namespace SuperClosure\Analyzer;
+
+use ReflectionException;
 use SuperClosure\Exception\ClosureAnalysisException;
+use Closure;
+use ReflectionFunction;
+use stdClass;
 
+/**
+ * Abstract class for analyzing a given closure.
+ */
 abstract class ClosureAnalyzer
 {
     /**
-     * Analyzer a given closure.
+     * Analyzes a given closure and returns an array of its details.
      *
-     * @param \Closure $closure
+     * @param Closure $closure The closure to analyze.
+     *
+     * @return array<string, mixed> An associative array containing the closure's details.
+     * @throws ReflectionException
      *
      * @throws ClosureAnalysisException
-     *
-     * @return array
      */
-    public function analyze(\Closure $closure)
+    public function analyze(Closure $closure): array
     {
         $data = [
-            'reflection' => new \ReflectionFunction($closure),
+            'reflection' => new ReflectionFunction($closure),
             'code'       => null,
             'hasThis'    => false,
             'context'    => [],
@@ -33,19 +45,32 @@ abstract class ClosureAnalyzer
         return $data;
     }
 
-    abstract protected function determineCode(array &$data);
+    /**
+     * Determines the code for the closure.
+     *
+     * @param array<string, mixed> $data An array passed by reference containing closure details.
+     *
+     * @return void
+     */
+    abstract protected function determineCode(array &$data): void;
 
     /**
-     * Returns the variables that are in the "use" clause of the closure.
+     * Determines the context (the variables in the "use" clause) of the closure.
      *
-     * These variables are referred to as the "used variables", "static
-     * variables", "closed upon variables", or "context" of the closure.
+     * @param array<string, mixed> $data An array passed by reference containing closure details.
      *
-     * @param array $data
+     * @return void
      */
-    abstract protected function determineContext(array &$data);
+    abstract protected function determineContext(array &$data): void;
 
-    private function determineBinding(array &$data)
+    /**
+     * Determines the binding (the $this object) and the scope (class name) of the closure.
+     *
+     * @param array<string, mixed> $data An array passed by reference containing closure details.
+     *
+     * @return void
+     */
+    private function determineBinding(array &$data): void
     {
         $data['binding'] = $data['reflection']->getClosureThis();
         if ($scope = $data['reflection']->getClosureScopeClass()) {
@@ -53,16 +78,25 @@ abstract class ClosureAnalyzer
         }
     }
 
-    private function isClosureStatic(\Closure $closure)
+    /**
+     * Determines if the given closure is static.
+     *
+     * This is done by attempting to bind the closure to a dummy object.
+     *
+     * @param Closure $closure The closure to test.
+     *
+     * @return bool True if the closure is static, false otherwise.
+     * @throws ReflectionException
+     */
+    private function isClosureStatic(Closure $closure): bool
     {
-        $closure = @$closure->bindTo(new \stdClass);
-
-        if ($closure === null) {
+        // Using the error suppression operator here because bindTo might trigger a warning.
+        $boundClosure = @$closure->bindTo(new stdClass());
+        if ($boundClosure === null) {
             return true;
         }
 
-        $rebound = new \ReflectionFunction($closure);
-
+        $rebound = new ReflectionFunction($boundClosure);
         return $rebound->getClosureThis() === null;
     }
 }

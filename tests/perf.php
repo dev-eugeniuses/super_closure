@@ -7,7 +7,7 @@ use SuperClosure\Analyzer\AstAnalyzer;
 use SuperClosure\Analyzer\TokenAnalyzer;
 
 $greeting = 'Hello';
-$helloWorld = function ($name = 'World') use ($greeting) {
+$helloWorld = static function ($name = 'World') use ($greeting) {
     echo "{$greeting}, {$name}!\n";
 };
 

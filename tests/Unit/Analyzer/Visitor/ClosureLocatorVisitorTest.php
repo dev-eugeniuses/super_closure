@@ -1,49 +1,70 @@
-<?php namespace SuperClosure\Test\Unit\Analyzer\Visitor;
+<?php
 
+namespace SuperClosure\Test\Unit\Analyzer\Visitor;
+
+use PhpParser\Node\Expr\Closure;
+use PhpParser\Node\Name;
+use PhpParser\Node\Stmt\Class_;
+use PhpParser\Node\Stmt\Namespace_;
+use PhpParser\Node\Stmt\Trait_;
+use PHPUnit\Framework\TestCase;
+use ReflectionException;
+use ReflectionFunction;
+use RuntimeException;
 use SuperClosure\Analyzer\Visitor\ClosureLocatorVisitor;
 
 /**
  * @covers SuperClosure\Analyzer\Visitor\ClosureLocatorVisitor
  */
-class ClosureLocatorVisitorTest extends \PHPUnit_Framework_TestCase
+class ClosureLocatorVisitorTest extends TestCase
 {
-    public function testClosureNodeIsDiscoveredByVisitor()
+    /**
+     * @throws ReflectionException
+     */
+    public function testClosureNodeIsDiscoveredByVisitor(): void
     {
-        $closure = function () {}; $startLine = __LINE__;
-        $reflectedClosure = new \ReflectionFunction($closure);
+        $closure = function () { }; $startLine = __LINE__;
+        $reflectedClosure = new ReflectionFunction($closure);
         $closureFinder = new ClosureLocatorVisitor($reflectedClosure);
-        $closureNode = new \PhpParser\Node\Expr\Closure([], ['startLine' => $startLine]);
+        $closureNode = new Closure([], ['startLine' => $startLine]);
         $closureFinder->enterNode($closureNode);
 
+        $this->assertNotNull($closureFinder->closureNode);
         $this->assertSame($closureNode, $closureFinder->closureNode);
     }
 
-    public function testClosureNodeIsAmbiguousIfMultipleClosuresOnLine()
+    /**
+     * @throws ReflectionException
+     */
+    public function testClosureNodeIsAmbiguousIfMultipleClosuresOnLine(): void
     {
-        $this->setExpectedException('RuntimeException');
+        $this->expectException(RuntimeException::class);
 
-        $closure = function () {}; function () {}; $startLine = __LINE__;
-        $closureFinder = new ClosureLocatorVisitor(new \ReflectionFunction($closure));
-        $closureFinder->enterNode(new \PhpParser\Node\Expr\Closure([], ['startLine' => $startLine]));
-        $closureFinder->enterNode(new \PhpParser\Node\Expr\Closure([], ['startLine' => $startLine]));
+        $closure = function () { }; function () { }; $startLine = __LINE__;
+        $closureFinder = new ClosureLocatorVisitor(new ReflectionFunction($closure));
+        $closureFinder->enterNode(new Closure([], ['startLine' => $startLine]));
+        $closureFinder->enterNode(new Closure([], ['startLine' => $startLine]));
     }
 
-    public function testCalculatesClosureLocation()
+    /**
+     * @throws ReflectionException
+     */
+    public function testCalculatesClosureLocation(): void
     {
-        $closure = function () {};
-        $closureFinder = new ClosureLocatorVisitor(new \ReflectionFunction($closure));
+        $closure = function () { };
+        $closureFinder = new ClosureLocatorVisitor(new ReflectionFunction($closure));
 
         $closureFinder->beforeTraverse([]);
 
-        $node = new \PhpParser\Node\Stmt\Namespace_(new \PhpParser\Node\Name(['Foo', 'Bar']));
+        $node = new Namespace_(new Name(['Foo', 'Bar']));
         $closureFinder->enterNode($node);
         $closureFinder->leaveNode($node);
 
-        $node = new \PhpParser\Node\Stmt\Trait_('Fizz');
+        $node = new Trait_('Fizz');
         $closureFinder->enterNode($node);
         $closureFinder->leaveNode($node);
 
-        $node = new \PhpParser\Node\Stmt\Class_('Buzz');
+        $node = new Class_('Buzz');
         $closureFinder->enterNode($node);
         $closureFinder->leaveNode($node);
 
@@ -55,10 +76,13 @@ class ClosureLocatorVisitorTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($expectedLocationKeys, array_keys($actualLocationKeys));
     }
 
-    public function testCanDetermineClassOrTraitInfo()
+    /**
+     * @throws ReflectionException
+     */
+    public function testCanDetermineClassOrTraitInfo(): void
     {
-        $closure = function () {};
-        $closureFinder = new ClosureLocatorVisitor(new \ReflectionFunction($closure));
+        $closure = function () { };
+        $closureFinder = new ClosureLocatorVisitor(new ReflectionFunction($closure));
         $closureFinder->location['namespace'] = __NAMESPACE__;
 
         $closureFinder->location['class'] = 'FooClass';

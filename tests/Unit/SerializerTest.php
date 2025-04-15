@@ -1,17 +1,28 @@
-<?php namespace SuperClosure\Test\Unit;
+<?php
 
+namespace SuperClosure\Test\Unit;
+
+use ArrayObject;
+use PHPUnit\Framework\MockObject\Exception;
+use PHPUnit\Framework\TestCase;
+use ReflectionException;
+use ReflectionFunction;
+use stdClass;
+use SuperClosure\Analyzer\ClosureAnalyzer;
 use SuperClosure\Analyzer\TokenAnalyzer;
+use SuperClosure\Exception\ClosureUnserializationException;
+use SuperClosure\SerializableClosure;
 use SuperClosure\Serializer;
 
 /**
  * @covers \SuperClosure\Serializer
  */
-class SerializerTest extends \PHPUnit_Framework_TestCase
+class SerializerTest extends TestCase
 {
-    public function testSerializingAndUnserializing()
+    public function testSerializingAndUnserializing(): void
     {
         $serializer = new Serializer(new TokenAnalyzer());
-        $originalFn = function ($n) {return $n +  5;};
+        $originalFn = static function ($n) { return $n + 5; };
         $serializedFn = $serializer->serialize($originalFn);
         $unserializedFn = $serializer->unserialize($serializedFn);
 
@@ -19,52 +30,48 @@ class SerializerTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(10, $unserializedFn(5));
     }
 
-    public function testUnserializingFailsWithInvalidSignature()
+    public function testUnserializingFailsWithInvalidSignature(): void
     {
         // Create a serializer with a signing key.
         $serializer = new Serializer(null, 'foobar');
-        $originalFn = function ($n) {return $n +  5;};
+        $originalFn = function ($n) { return $n + 5; };
         $serializedFn = $serializer->serialize($originalFn);
 
         // Modify the serialized closure.
         $serializedFn[5] = 'x';
 
         // Unserialization should fail on invalid signature.
-        $this->setExpectedException('SuperClosure\Exception\ClosureUnserializationException');
+        $this->expectException(ClosureUnserializationException::class);
         $serializer->unserialize($serializedFn);
     }
 
-    /**
-     * @expectedException \SuperClosure\Exception\ClosureUnserializationException
-     */
-    public function testUnserializingFailsWithInvalidData()
+    public function testUnserializingFailsWithInvalidData(): void
     {
+        $this->expectException(ClosureUnserializationException::class);
         $serializer = new Serializer(new TokenAnalyzer());
         $data = 'foobar' . serialize('foobar');
         $serializer->unserialize($data);
     }
 
-    /**
-     * @expectedException \SuperClosure\Exception\ClosureUnserializationException
-     */
-    public function testUnserializingFailsWhenSuperClosureIsNotReturned()
+    public function testUnserializingFailsWhenSuperClosureIsNotReturned(): void
     {
+        $this->expectException(ClosureUnserializationException::class);
         $serializer = new Serializer(new TokenAnalyzer());
         $data = serialize('foobar');
         $serializer->unserialize($data);
     }
 
-    public function testSerializingAndUnserializingWithSignature()
+    public function testSerializingAndUnserializingWithSignature(): void
     {
         // Create a serializer with a signing key.
         $serializer = new Serializer(null, 'foobar');
-        $originalFn = function ($n) {return $n +  5;};
+        $originalFn = static function ($n) { return $n + 5; };
         $serializedFn = $serializer->serialize($originalFn);
 
         // Check data to make sure it looks like an array(2).
         $this->assertEquals('%', $serializedFn[0]);
         $unserializedData = unserialize(substr($serializedFn, 45));
-        $this->assertInstanceOf('SuperClosure\SerializableClosure', $unserializedData);
+        $this->assertInstanceOf(SerializableClosure::class, $unserializedData);
 
         // Make sure unserialization still works.
         $unserializedFn = $serializer->unserialize($serializedFn);
@@ -72,7 +79,10 @@ class SerializerTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(10, $unserializedFn(5));
     }
 
-    public function testGettingClosureData()
+    /**
+     * @throws ReflectionException
+     */
+    public function testGettingClosureData(): void
     {
         $adjustment = 2;
         $fn = function ($n) use (&$fn, $adjustment) {
@@ -92,54 +102,59 @@ class SerializerTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($data['hasRefs']);
         $this->assertInstanceOf(__CLASS__, $data['binding']);
         $this->assertEquals(__CLASS__, $data['scope']);
-        $this->assertInternalType('array', $data['tokens']);
+        $this->assertIsArray($data['tokens'], 'array');
 
         // Test getting serializable closure data.
         $data = $serializer->getData($fn, true);
         $this->assertCount(5, $data);
-        $this->assertTrue(in_array(Serializer::RECURSION, $data['context']));
+        $this->assertContains(Serializer::RECURSION, $data['context']);
         $this->assertNull($data['binding']);
         $this->assertEquals(__CLASS__, $data['scope']);
         $this->assertArrayNotHasKey('reflection', $data);
     }
 
-    public function testWrappingClosuresWithinVariables()
+    /**
+     * @throws ReflectionException|Exception
+     */
+    public function testWrappingClosuresWithinVariables(): void
     {
         $serializer = new Serializer(
-            $this->getMockForAbstractClass('SuperClosure\Analyzer\ClosureAnalyzer')
+            $this->createMock(ClosureAnalyzer::class)
         );
 
-        $value1 = function () {};
+        $value1 = function () { };
         Serializer::wrapClosures($value1, $serializer);
-        $this->assertInstanceOf('SuperClosure\SerializableClosure', $value1);
+        $this->assertInstanceOf(SerializableClosure::class, $value1);
 
-        $value2 = ['fn' => function () {}];
+        $value2 = ['fn' => function () { }];
         Serializer::wrapClosures($value2, $serializer);
-        $this->assertInstanceOf('SuperClosure\SerializableClosure', $value2['fn']);
+        $this->assertInstanceOf(SerializableClosure::class, $value2['fn']);
 
-        $value3 = new \stdClass;
-        $value3->fn = function () {};
+        $value3 = new stdClass;
+        $value3->fn = function () { };
         Serializer::wrapClosures($value3, $serializer);
-        $this->assertInstanceOf('SuperClosure\SerializableClosure', $value3->fn);
+        $this->assertInstanceOf(SerializableClosure::class, $value3->fn);
 
         if (!defined('HHVM_VERSION')) {
-            $value4 = new \ArrayObject([function () {}]);
+            $value4 = new ArrayObject([function () { }]);
             Serializer::wrapClosures($value4, $serializer);
-            $this->assertInstanceOf('SuperClosure\SerializableClosure', $value4[0]);
+            $this->assertInstanceOf(SerializableClosure::class, $value4[0]);
         }
 
         $thing = new Serializer();
-        $fn = function () {return $this->analyzer;};
+        $fn = function () { return $this->analyzer; };
 
-        $value5 = $fn->bindTo($thing, 'SuperClosure\Serializer');
+        /** @var SerializableClosure $value5 */
+        $value5 = $fn->bindTo($thing, Serializer::class);
         Serializer::wrapClosures($value5, $serializer);
-        $reflection = new \ReflectionFunction($value5->getClosure());
+        $reflection = new ReflectionFunction($value5->getClosure());
         $this->assertSame($thing, $reflection->getClosureThis());
         $this->assertEquals(get_class($thing), $reflection->getClosureScopeClass()->getName());
 
+        /** @var SerializableClosure $value6 */
         $value6 = $fn->bindTo($thing);
         Serializer::wrapClosures($value6, $serializer);
-        $reflection = new \ReflectionFunction($value6->getClosure());
+        $reflection = new ReflectionFunction($value6->getClosure());
         $this->assertEquals(__CLASS__, $reflection->getClosureScopeClass()->getName());
     }
 }

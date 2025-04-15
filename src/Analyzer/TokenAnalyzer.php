@@ -1,45 +1,54 @@
-<?php namespace SuperClosure\Analyzer;
+<?php
+
+declare(strict_types=1);
+
+namespace SuperClosure\Analyzer;
 
 use SuperClosure\Exception\ClosureAnalysisException;
+use SplFileObject;
+use ReflectionFunction;
 
 /**
- * This is the token based analyzer.
+ * This is the token-based analyzer.
  *
- * We're using Uses reflection and tokenization to analyze a closure and
- * determine its code and context. This is much faster than the AST based
- * implementation.
+ * Uses reflection and tokenization to analyze a closure and determine its code and context.
+ * This implementation is significantly faster than the AST-based analyzer.
  */
 class TokenAnalyzer extends ClosureAnalyzer
 {
-    public function determineCode(array &$data)
+    public function determineCode(array &$data): void
     {
         $this->determineTokens($data);
         $data['code'] = implode('', $data['tokens']);
-        $data['hasThis'] = (strpos($data['code'], '$this') !== false);
+        $data['hasThis'] = (str_contains($data['code'], '$this'));
     }
 
-    private function determineTokens(array &$data)
+    private function determineTokens(array &$data): void
     {
         $potential = $this->determinePotentialTokens($data['reflection']);
-        $braceLevel = $index = $step = $insideUse = 0;
-        $data['tokens'] = $data['context'] = [];
+        $braceLevel = 0;
+        $step = 0;
+        $insideUse = 0;
+        $data['tokens'] = [];
+        $data['context'] = [];
 
-        foreach ($potential as $token) {
-            $token = new Token($token);
+        foreach ($potential as $tokenData) {
+            // Wrap each token in our Token object.
+            $token = new Token($tokenData);
             switch ($step) {
-                // Handle tokens before the function declaration.
+                // Before the function declaration.
                 case 0:
                     if ($token->is(T_FUNCTION)) {
                         $data['tokens'][] = $token;
                         $step++;
                     }
                     break;
-                // Handle tokens inside the function signature.
+                // Inside the function signature.
                 case 1:
                     $data['tokens'][] = $token;
-                    if ($insideUse) {
+                    if ($insideUse > 0) {
                         if ($token->is(T_VARIABLE)) {
-                            $varName = trim($token, '$ ');
+                            $varName = trim($token->code, '$ ');
                             $data['context'][$varName] = null;
                         } elseif ($token->is('&')) {
                             $data['hasRefs'] = true;
@@ -52,7 +61,7 @@ class TokenAnalyzer extends ClosureAnalyzer
                         $braceLevel++;
                     }
                     break;
-                // Handle tokens inside the function body.
+                // Inside the function body.
                 case 2:
                     $data['tokens'][] = $token;
                     if ($token->is('{')) {
@@ -64,12 +73,11 @@ class TokenAnalyzer extends ClosureAnalyzer
                         }
                     }
                     break;
-                // Handle tokens after the function declaration.
+                // After the function declaration.
                 case 3:
                     if ($token->is(T_FUNCTION)) {
-                        throw new ClosureAnalysisException('Multiple closures '
-                            . 'were declared on the same line of code. Could not '
-                            . 'determine which closure was the intended target.'
+                        throw new ClosureAnalysisException(
+                            'Multiple closures were declared on the same line of code. Could not determine which closure was the intended target.'
                         );
                     }
                     break;
@@ -77,9 +85,8 @@ class TokenAnalyzer extends ClosureAnalyzer
         }
     }
 
-    private function determinePotentialTokens(\ReflectionFunction $reflection)
+    private function determinePotentialTokens(ReflectionFunction $reflection): array
     {
-        // Load the file containing the code for the function.
         $fileName = $reflection->getFileName();
         if (!is_readable($fileName)) {
             throw new ClosureAnalysisException(
@@ -88,7 +95,8 @@ class TokenAnalyzer extends ClosureAnalyzer
         }
 
         $code = '';
-        $file = new \SplFileObject($fileName);
+        $file = new SplFileObject($fileName);
+        // Reflection line numbers are 1-indexed.
         $file->seek($reflection->getStartLine() - 1);
         while ($file->key() < $reflection->getEndLine()) {
             $code .= $file->current();
@@ -96,19 +104,19 @@ class TokenAnalyzer extends ClosureAnalyzer
         }
 
         $code = trim($code);
-        if (strpos($code, '<?php') !== 0) {
+        if (!str_starts_with($code, '<?php')) {
             $code = "<?php\n" . $code;
         }
 
         return token_get_all($code);
     }
 
-    protected function determineContext(array &$data)
+    protected function determineContext(array &$data): void
     {
-        // Get the values of the variables that are closed upon in "use".
+        // Get the static variables from the closure.
         $values = $data['reflection']->getStaticVariables();
 
-        // Construct the context by combining the variable names and values.
+        // Combine the names from the captured "use" clause with the actual values.
         foreach ($data['context'] as $name => &$value) {
             if (isset($values[$name])) {
                 $value = $values[$name];

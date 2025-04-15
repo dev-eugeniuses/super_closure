@@ -1,13 +1,15 @@
-<?php namespace SuperClosure\Test\Unit\Analyzer;
+<?php
+namespace SuperClosure\Test\Unit\Analyzer;
 
+use PHPUnit\Framework\TestCase;
 use SuperClosure\Analyzer\Token;
 
 /**
  * @covers \SuperClosure\Analyzer\Token
  */
-class TokenTest extends \PHPUnit_Framework_TestCase
+class TokenTest extends TestCase
 {
-    public function testCanInstantiateLiteralToken()
+    public function testCanInstantiateLiteralToken(): void
     {
         $token = new Token('{');
 
@@ -18,7 +20,7 @@ class TokenTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('{', (string)$token);
     }
 
-    public function testCanInstantiateTokenWithParts()
+    public function testCanInstantiateTokenWithParts(): void
     {
         $token = new Token('function', T_FUNCTION, 2);
 
@@ -28,7 +30,7 @@ class TokenTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(2, $token->line);
     }
 
-    public function testCanInstantiateTokenFromTokenizerOutput()
+    public function testCanInstantiateTokenFromTokenizerOutput(): void
     {
         $token = new Token([T_FUNCTION, 'function', 2]);
 
@@ -38,7 +40,7 @@ class TokenTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(2, $token->line);
     }
 
-    public function testCanCheckIfTokenMatchesValue()
+    public function testCanCheckIfTokenMatchesValue(): void
     {
         $token = new Token([T_FUNCTION, 'function', 2]);
 
